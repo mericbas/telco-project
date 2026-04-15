@@ -1,0 +1,85 @@
+version: '3.8'
+
+# ============================================================
+# docker-compose.yml – Telco Project Oracle XE Environment
+# ============================================================
+#
+# USAGE:
+#   docker compose up -d          # start in background
+#   docker compose logs -f        # follow startup logs
+#   docker compose down           # stop and remove container
+#   docker compose down -v        # also wipe persistent volume
+#
+# DEFAULT CREDENTIALS (change before any public deployment):
+#   SYS / SYSTEM password : TelcoAdmin2026
+#   Application user      : TELCO_USER
+#   Application password  : Telco2026!
+#   Service name (PDB)    : TELCODB
+#   Host port             : 1521
+#   Enterprise Manager    : https://localhost:5500/em
+# ============================================================
+
+services:
+
+  oracle-xe:
+    image: gvenzl/oracle-xe:21-slim-faststart   # Oracle XE 21c, slim image with fast startup
+    container_name: telco_oracle_xe
+    restart: unless-stopped
+
+    ports:
+      - "1521:1521"    # TNS / JDBC listener
+      - "5500:5500"    # Oracle Enterprise Manager Express (HTTPS)
+
+    environment:
+      # --- DBA credentials ---
+      ORACLE_PASSWORD: TelcoAdmin2026
+
+      # --- Pluggable Database name that will be created automatically ---
+      ORACLE_DATABASE: TELCODB
+
+      # --- Application-level user created automatically by the image ---
+      APP_USER: TELCO_USER
+      APP_USER_PASSWORD: "Telco2026!"
+
+    volumes:
+      # Persistent data volume – survives container restarts
+      - oracle_data:/opt/oracle/oradata
+
+      # --------------------------------------------------------
+      # AUTOMATIC SEEDING
+      # Any *.sql or *.sh file placed in the directory below is
+      # executed once, in alphabetical order, after the database
+      # is initialised for the first time.
+      # --------------------------------------------------------
+      - ./TABLE_CREATION_SCRIPTS.sql:/container-entrypoint-initdb.d/01_create_tables.sql:ro
+
+    healthcheck:
+      test: ["CMD", "healthcheck.sh"]
+      interval: 30s
+      timeout: 15s
+      retries: 10
+      start_period: 5m   # Oracle XE needs ~3-4 minutes to start the first time
+
+    # Increase shared memory – required by Oracle
+    shm_size: '1gb'
+
+    # Resource limits (adjust based on available host RAM)
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 1G
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+# ============================================================
+# Named volume – stores Oracle data files outside the container
+# ============================================================
+volumes:
+  oracle_data:
+    driver: local
